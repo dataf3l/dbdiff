@@ -56,6 +56,13 @@ func getHeaders() string {
 	return dx
 
 }
+func mkEmpty() Site {
+	d := make(Site)
+	for _, f := range getFieldList() {
+		d[f] = "EMPTY"
+	}
+	return d
+}
 func getFieldList() []string {
 	fields := []string{
 		"id",
@@ -201,7 +208,7 @@ func main() {
 	total := 0
 	for _, idx := range ids1 {
 		leftRecord := leftRecordSet[idx]
-		var rightRecord Site
+		rightRecord := mkEmpty()
 		if val, ok := rightRecordSet[idx]; ok {
 			rightRecord = val
 		}
