@@ -98,14 +98,32 @@ func compareRecords(site1 Site, site2 Site) (string, int) {
 	for _, fieldName := range fields {
 		leftValue := site1[fieldName]
 		rightValue := site2[fieldName]
-		res := "<td></td><td></td>"
+
+		lv := "<xmp>" + leftValue + "</xmp>"
+		rv := "<xmp>" + rightValue + "</xmp>"
+
+		res := "<td class=ok>" + lv + "</td><td class=ok>" + rv + "</td>"
+
+		if leftValue == "EMPTY" {
+			res = "<td class=empty>&nbsp;</td><td>" + rv + "</td>"
+			diffCount++
+			resultFields = append(resultFields, res)
+			continue
+		}
+		if rightValue == "EMPTY" {
+			res = "<td>" + lv + "</td><td class=empty>&nbsp;</td>"
+			diffCount++
+			resultFields = append(resultFields, res)
+			continue
+		}
+
 		if leftValue == rightValue {
 			// Ignore differences
 		} else {
 			// Report Differences
 			diffCount++
-			res = "<td style='background-color:rgb(230,200,200)'><xmp>" + leftValue + "</xmp></td>"
-			res += "<td style='background-color:rgb(230,200,200)' ><xmp>" + rightValue + "</xmp></td>"
+			res = "<td style='background-color:rgb(230,200,200)'>" + lv + "</td>"
+			res += "<td style='background-color:rgb(230,200,200)' >" + rv + "</td>"
 		}
 		resultFields = append(resultFields, res)
 	}
@@ -181,6 +199,63 @@ func getRecords(query string, dbName string) (map[string]Site, []string, error) 
 	db.Close()
 	return result, ids, nil
 }
+func getCombined(ids1 []string, ids2 []string) []string {
+	// start:
+	res := []string{}
+	lid := 0
+	rid := 0
+	lmax := len(ids1)
+	rmax := len(ids2)
+	for {
+		smallest := "NULL"
+		if rid >= rmax && lid >= lmax {
+			break
+		}
+
+		if lid >= lmax {
+			smallest = ids2[rid]
+			rid++
+			res = append(res, smallest)
+			continue
+		}
+		if rid >= rmax {
+			smallest = ids1[lid]
+			lid++
+			res = append(res, smallest)
+			continue
+		}
+
+		lval := ids1[lid]
+		rval := ids2[rid]
+
+		if lval == rval {
+			smallest = ids1[lid]
+			lid++
+			rid++
+			res = append(res, smallest)
+			continue
+		}
+		if lval < rval {
+			smallest = ids1[lid]
+			lid++
+			res = append(res, smallest)
+			continue
+		}
+		if lval > rval {
+			smallest = ids2[rid]
+			rid++
+			res = append(res, smallest)
+			continue
+		}
+
+		res = append(res, smallest)
+		if rid >= rmax && lid >= lmax {
+			break
+		}
+	}
+	return res
+
+}
 
 func main() {
 	if len(os.Args) < 3 {
@@ -189,8 +264,8 @@ func main() {
 	}
 	db1name := os.Args[1]
 	db2name := os.Args[2]
-	q1 := "SELECT " + strings.Join(getFieldList(), ",") + " FROM site"
-	q2 := "SELECT " + strings.Join(getFieldList(), ",") + " FROM site"
+	q1 := "SELECT " + strings.Join(getFieldList(), ",") + " FROM site ORDER BY id"
+	q2 := "SELECT " + strings.Join(getFieldList(), ",") + " FROM site ORDER BY id"
 
 	var leftRecordSet map[string]Site
 	var rightRecordSet map[string]Site
@@ -199,25 +274,53 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	rightRecordSet, _, err = getRecords(q2, db2name)
+	rightRecordSet, ids2, err := getRecords(q2, db2name)
 	if err != nil {
 		log.Fatal(err)
 	}
-	html := "<table border=1>"
+	// all ids:
+	combined := getCombined(ids1, ids2)
+
+	html := "<table border=1 cellspacing=0 cellpadding=4>"
 	html += getHeaders()
 	total := 0
-	for _, idx := range ids1 {
-		leftRecord := leftRecordSet[idx]
+	for _, idx := range combined {
+		leftRecord := mkEmpty()
 		rightRecord := mkEmpty()
+
+		if val, ok := leftRecordSet[idx]; ok {
+			leftRecord = val
+		}
+
 		if val, ok := rightRecordSet[idx]; ok {
 			rightRecord = val
 		}
+
 		r, c := compareRecords(leftRecord, rightRecord)
 		total += c
 		html += r
 	}
-	html += "</table><style> td { white-space:nowrap; max-width:300px;overflow:hidden } </style>"
+	html += `</table>
+	<style> 
+	.empty {
+		background-image: linear-gradient(45deg, #dbdbdb 25%, #f5e7e7 25%, #f5e7e7 50%, #dbdbdb 50%, #dbdbdb 75%, #f5e7e7 75%, #f5e7e7 100%);
+background-size: 56.57px 56.57px;
+
+	}
+
+	td { 
+		white-space:nowrap; 
+		max-width:300px;
+		overflow:hidden 
+	} 
+	.ok {
+		background-color:rgb(200,230,200);
+	}
+
+	</style>`
 	fmt.Println(html)
 
 	fmt.Printf("Total: %d", total)
 }
+
+// http://stripesgenerator.com/
