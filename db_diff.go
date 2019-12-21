@@ -10,6 +10,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	//"time"
 )
@@ -46,13 +47,20 @@ func getConnectionString(dbName string) string {
 // Site represents a record on the Site table, although it could probably be any table
 type Site map[string]string
 
-func getHeaders() string {
+func getHeaders(db1name string, db2name string) string {
 	dx := "<tr>"
 	for _, h := range getFieldList() {
-		dx += "<th>" + h + "</th>"
-		dx += "<th>" + h + "</th>"
+		dx += "<th colspan=3 class='field-name'>" + h + "</th>"
 	}
 	dx += "</tr>"
+	dx += "<tr>"
+	for _, _ = range getFieldList() {
+		dx += "<th>" + db1name + "</th>"
+		dx += "<th style='width:5px'>&nbsp;</th>"
+		dx += "<th>" + db2name + "</th>"
+	}
+	dx += "</tr>"
+
 	return dx
 
 }
@@ -64,12 +72,37 @@ func mkEmpty() Site {
 	return d
 }
 func getFieldList() []string {
+	/*
+		fields := []string{
+			"id",
+			//	"name",
+			//	"site",
+			//	"site_url",
+			//	"company_name",
+			"job_title",
+			//"job_description",
+			"educationRequirements",
+			"experienceRequirements",
+			"qualifications",
+			"responsibilities",
+			"skills",
+			"value_hour",
+			//"sid",
+			//"folder",
+			//"offer_modulus",
+			"enabled",
+			"destination",
+			"organization",
+			"occupational_category",
+			//"organization_logo",	// fix at the end organization_logo
+			"script_template"}
+	*/
 	fields := []string{
 		"id",
-		//	"name",
-		//	"site",
-		//	"site_url",
-		//	"company_name",
+		"name",
+		"site",
+		"site_url",
+		"company_name",
 		"job_title",
 		"job_description",
 		"educationRequirements",
@@ -85,16 +118,41 @@ func getFieldList() []string {
 		"destination",
 		"organization",
 		"occupational_category",
-		"organization_logo",
+		"organization_logo", // fix at the end organization_logo
 		"script_template"}
 
 	return fields
 }
-func compareRecords(site1 Site, site2 Site) (string, int) {
+func compareRecords(site1 Site, site2 Site, idx int) (string, int) {
+	sidx := fmt.Sprintf("%d", idx)
 	fields := getFieldList()
 	diffCount := 0
 	var resultFields []string
 	result := "<tr>"
+
+	//leftValues := []string{}
+	//for _, fieldName := range fields {
+	//	leftValue := site1[fieldName]
+	//	leftValues = append(leftValues, fmt.Sprintf("'%s'",leftValue))
+	//}
+
+	//leftInsert := "INSERT INTO site (" + strings.Join(getFields(),",")+") VALUES('" + strings.Join(leftValues,",")+"');"
+
+	//for _, fieldName := range fields {
+
+	// figure out if everything is OK:
+
+	rowIsIdentical := true
+	for _, fieldName := range fields {
+		leftValue := site1[fieldName]
+		rightValue := site2[fieldName]
+
+		if leftValue != rightValue {
+			rowIsIdentical = false
+			break
+		}
+	}
+
 	for _, fieldName := range fields {
 		leftValue := site1[fieldName]
 		rightValue := site2[fieldName]
@@ -102,18 +160,32 @@ func compareRecords(site1 Site, site2 Site) (string, int) {
 		lv := "<xmp>" + leftValue + "</xmp>"
 		rv := "<xmp>" + rightValue + "</xmp>"
 
-		res := "<td class=ok>" + lv + "</td><td class=ok>" + rv + "</td>"
+		// add rules
+		okClassName := "ok"
+		if rowIsIdentical {
+			okClassName = "ok identical "
+		}
+		upref := "<td class='ucell " + okClassName + "' title='" + sidx + "' onclick='prompt(\"\",\"" + sidx + "\");'  >"
+		//upref = "<td class='ucell'>"
+
+		lres := "<td class='lcell " + okClassName + "'>" + lv + "</td>"
+		ures := upref + "</td>"
+		rres := "<td class='rcell " + okClassName + "'>" + rv + "</td>"
 
 		if leftValue == "EMPTY" {
-			res = "<td class=empty>&nbsp;</td><td>" + rv + "</td>"
+			lres = "<td class='lcell empty'>&nbsp;</td>"
+			ures = upref + "<a>&lt;</a></td>"
+			rres = "<td class='rcell'>" + rv + "</td>"
 			diffCount++
-			resultFields = append(resultFields, res)
+			resultFields = append(resultFields, lres+ures+rres)
 			continue
 		}
 		if rightValue == "EMPTY" {
-			res = "<td>" + lv + "</td><td class=empty>&nbsp;</td>"
+			lres = "<td class='lcell'>" + lv + "</td>"
+			ures = upref + "<a>&gt;</a></td>"
+			rres = "<td class='rcell empty'>&nbsp;</td>"
 			diffCount++
-			resultFields = append(resultFields, res)
+			resultFields = append(resultFields, lres+ures+rres)
 			continue
 		}
 
@@ -122,10 +194,12 @@ func compareRecords(site1 Site, site2 Site) (string, int) {
 		} else {
 			// Report Differences
 			diffCount++
-			res = "<td style='background-color:rgb(230,200,200)'>" + lv + "</td>"
-			res += "<td style='background-color:rgb(230,200,200)' >" + rv + "</td>"
+			lres = "<td class='lcell' style='background-color:rgb(230,200,200)'>" + lv + "</td>"
+			ures = upref + "<a href='#'>&lt;</a><br/><br/><a href='#'>&gt;</a></td>"
+			rres = "<td class='rcell' style='background-color:rgb(230,200,200)' >" + rv + "</td>"
 		}
-		resultFields = append(resultFields, res)
+
+		resultFields = append(resultFields, lres+ures+rres)
 	}
 	result += strings.Join(resultFields, "")
 	result += "</tr>\n"
@@ -142,7 +216,8 @@ func makeResultReceiver(length int) []interface{} {
 } // https://github.com/jinzhu/gorm/issues/1167
 
 // rows, ids
-func getRecords(query string, dbName string) (map[string]Site, []string, error) {
+func getRecords(query string, dbName string) (map[string]Site, []int, error) {
+	ids := []int{}
 	db := getDatabaseConnection(dbName)
 
 	dbrows, err := db.Query(query)
@@ -151,10 +226,9 @@ func getRecords(query string, dbName string) (map[string]Site, []string, error) 
 		fmt.Println(msg)
 		//io.WriteString(w, "Fail")
 		db.Close()
-		return make(map[string]Site), []string{}, err
+		return make(map[string]Site), ids, err
 	}
 	result := make(map[string]Site)
-	ids := []string{}
 	length := len(getFieldList())
 	columns := getFieldList()
 	for dbrows.Next() {
@@ -190,7 +264,11 @@ func getRecords(query string, dbName string) (map[string]Site, []string, error) 
 			}
 
 		}
-		ids = append(ids, record["id"])
+		idAsInt, err := strconv.Atoi(record["id"])
+		if err != nil {
+			fmt.Println("INVALID ID DATA:'" + record["id"] + "' not convertible to int.")
+		}
+		ids = append(ids, idAsInt)
 		result[record["id"]] = record
 
 		//io.WriteString(w, tmpl)
@@ -199,15 +277,15 @@ func getRecords(query string, dbName string) (map[string]Site, []string, error) 
 	db.Close()
 	return result, ids, nil
 }
-func getCombined(ids1 []string, ids2 []string) []string {
+func getCombined(ids1 []int, ids2 []int) []int {
 	// start:
-	res := []string{}
+	res := []int{}
 	lid := 0
 	rid := 0
 	lmax := len(ids1)
 	rmax := len(ids2)
 	for {
-		smallest := "NULL"
+		smallest := -1
 		if rid >= rmax && lid >= lmax {
 			break
 		}
@@ -264,8 +342,11 @@ func main() {
 	}
 	db1name := os.Args[1]
 	db2name := os.Args[2]
+	//q1 := "SELECT id-200 as id, job_title, educationRequirements, experienceRequirements, qualifications, responsibilities, skills, value_hour, enabled, destination, organization, occupational_category, script_template FROM site WHERE id>=214 and id <=253  order by id "
+	//q2 := "SELECT " + strings.Join(getFieldList(), ",") + " FROM site WHERE  id>=14 and id <=53 ORDER BY id "
+
 	q1 := "SELECT " + strings.Join(getFieldList(), ",") + " FROM site ORDER BY id"
-	q2 := "SELECT " + strings.Join(getFieldList(), ",") + " FROM site ORDER BY id"
+	q2 := "SELECT " + strings.Join(getFieldList(), ",") + " FROM site ORDER BY id "
 
 	var leftRecordSet map[string]Site
 	var rightRecordSet map[string]Site
@@ -282,9 +363,11 @@ func main() {
 	combined := getCombined(ids1, ids2)
 
 	html := "<table border=1 cellspacing=0 cellpadding=4>"
-	html += getHeaders()
+	html += getHeaders(db1name, db2name)
 	total := 0
-	for _, idx := range combined {
+	for _, idxAsInt := range combined {
+		idx := fmt.Sprintf("%d", idxAsInt)
+
 		leftRecord := mkEmpty()
 		rightRecord := mkEmpty()
 
@@ -296,12 +379,40 @@ func main() {
 			rightRecord = val
 		}
 
-		r, c := compareRecords(leftRecord, rightRecord)
+		r, c := compareRecords(leftRecord, rightRecord, idxAsInt)
 		total += c
 		html += r
 	}
 	html += `</table>
 	<style> 
+	* {
+		font-family: "courier new", monospace;
+	}
+	.ucell a {
+		text-decoration: none;
+	}
+	.ucell {
+		text-align:center;
+		font-size:8pt;
+		border:1px solid rgb(200,200,200);
+		width:5px;
+	}
+		
+	.lcell {
+		border:1px solid rgb(200,200,200);
+		border-left:2px solid black;
+	}
+	.rcell {
+		border:1px solid rgb(200,200,200);
+		border-right:2px solid black;
+	}
+	
+	.rcell {
+
+	}
+	.field-name {
+		font-size:2em;
+	}
 	.empty {
 		background-image: linear-gradient(45deg, #dbdbdb 25%, #f5e7e7 25%, #f5e7e7 50%, #dbdbdb 50%, #dbdbdb 75%, #f5e7e7 75%, #f5e7e7 100%);
 background-size: 56.57px 56.57px;
@@ -315,6 +426,9 @@ background-size: 56.57px 56.57px;
 	} 
 	.ok {
 		background-color:rgb(200,230,200);
+	}
+	.identical {
+		background-color:rgb(200,200,230);
 	}
 
 	</style>`
