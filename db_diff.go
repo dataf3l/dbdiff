@@ -342,8 +342,21 @@ func main() {
 	}
 	db1name := os.Args[1]
 	db2name := os.Args[2]
+	// some fields
 	//q1 := "SELECT id-200 as id, job_title, educationRequirements, experienceRequirements, qualifications, responsibilities, skills, value_hour, enabled, destination, organization, occupational_category, script_template FROM site WHERE id>=214 and id <=253  order by id "
-	//q2 := "SELECT " + strings.Join(getFieldList(), ",") + " FROM site WHERE  id>=14 and id <=53 ORDER BY id "
+
+	// all fields:
+	//q1 := "SELECT id-200 as id , name, site, site_url, company_name, job_title, job_description, educationRequirements, experienceRequirements, qualifications, responsibilities, skills, value_hour, sid, folder, offer_modulus, enabled, destination, organization, occupational_category, organization_logo, script_template FROM site WHERE id>=214 and id <=253  order by id "
+	//q2 := "SELECT " + strings.Join(getFieldList(), ",") + " FROM site WHERE id>=14 and id<=53 ORDER BY id "
+
+	/// all fields all records
+	//////q1 := "SELECT id as id, name, site, site_url, company_name, job_title, job_description, educationRequirements, experienceRequirements, qualifications, responsibilities, skills, value_hour, sid, folder, offer_modulus, enabled, destination, organization, occupational_category, organization_logo, script_template FROM site WHERE site='tutree.com' and id >= 1053 and id <= 1089 order by id "
+	//////q2 := "SELECT " + strings.Join(getFieldList(), ",") + " FROM site WHERE  id >= 1053 and id <= 1089 ORDER BY id "
+
+	//q1 := "SELECT " + strings.Join(getFieldList(), ",") + " FROM site WHERE site='tutree.com' and id>12 and id < 214 and id < 1053 ORDER BY id"
+	//q2 := "SELECT " + strings.Join(getFieldList(), ",") + " FROM site WHERE id > 53 and id < 1001 and id < 4000 ORDER BY id "
+
+	//q1 := "SELECT " + strings.Join(getFieldList(), ",") + " FROM site WHERE site='tutree.com' and id >=214 and id <=253  ORDER BY id"
 
 	q1 := "SELECT " + strings.Join(getFieldList(), ",") + " FROM site ORDER BY id"
 	q2 := "SELECT " + strings.Join(getFieldList(), ",") + " FROM site ORDER BY id "
