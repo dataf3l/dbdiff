@@ -1,0 +1,46 @@
+* {
+		font-family: "courier new", monospace;
+	}
+	.ucell a {
+		text-decoration: none;
+	}
+	.ucell {
+		text-align:center;
+		font-size:8pt;
+		border:1px solid rgb(200,200,200);
+		width:5px;
+	}
+
+	.lcell {
+		border:1px solid rgb(200,200,200);
+		border-left:2px solid black;
+	}
+	.rcell {
+		border:1px solid rgb(200,200,200);
+		border-right:2px solid black;
+	}
+
+	.rcell {
+
+	}
+	.field-name {
+		font-size:2em;
+	}
+	.empty {
+		background-image: linear-gradient(45deg, #dbdbdb 25%, #f5e7e7 25%, #f5e7e7 50%, #dbdbdb 50%, #dbdbdb 75%, #f5e7e7 75%, #f5e7e7 100%);
+background-size: 56.57px 56.57px;
+
+	}
+
+	td { 
+		white-space:nowrap; 
+		max-width:400px;
+		overflow:hidden 
+	} 
+	.ok {
+		background-color:rgb(200,230,200);
+	}
+	.identical {
+		background-color:rgb(200,200,230);
+	}
+

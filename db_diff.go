@@ -34,6 +34,7 @@ import (
 
 var db1name string
 var db2name string
+var changes []string
 
 // getDatabaseConnection provides a database connection *sql.DB Object
 // https://golang.org/pkg/database/sql/#DB
@@ -100,7 +101,7 @@ func getHeaders(db1name string, db2name string) string {
 	}
 	dx += "</tr>"
 	dx += "<tr>"
-	for _, _ = range getFieldList() {
+	for range getFieldList() { // _, _ =
 		dx += "<th>" + db1name + "</th>"
 		dx += "<th style='width:5px'>&nbsp;</th>"
 		dx += "<th>" + db2name + "</th>"
@@ -185,7 +186,7 @@ func getFieldList() []string {
 // TODO: make a function map so people can indicate which
 // columns should be different and which columns should be the same
 // also exceldiff?????
-func compareRecords(site1 Site, site2 Site, idx int) (string, int) {
+func compareRecords(site1 Site, site2 Site, database1Name string, database2Name string, idx int) (string, int) {
 	sidx := fmt.Sprintf("%d", idx)
 	fields := getFieldList()
 	diffCount := 0
@@ -406,9 +407,29 @@ func getCombined(ids1 []int, ids2 []int) []int {
 	return res
 
 }
+func uiMenu() string {
+	return fmt.Sprintf(`
+	<ul>
+	<li><a href='/list'>List</a></li>
+	<li><a href='/changes'>Show Current Change Set</a><br/><br/><br/></li>
+	<li><a href='/clear'>Delete All Changes(%d)</a></li>
+	</ul>
+	`, len(changes))
 
+}
+func jpre(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+}
+func pre(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/html")
+
+	fmt.Fprintf(w, `<link rel='stylesheet' type='text/css' href='/css/style.css'> `)
+	fmt.Fprintf(w, `<script src='/js/db_diff.js'></script>`)
+
+}
 func showDifferencesHandler(w http.ResponseWriter, r *http.Request) {
-
+	pre(w)
+	fmt.Println("/list")
 	// some fields
 	//q1 := "SELECT id-200 as id, job_title, educationRequirements, experienceRequirements, qualifications, responsibilities, skills, value_hour, enabled, destination, organization, occupational_category, script_template FROM site WHERE id>=214 and id <=253  order by id "
 
@@ -442,7 +463,8 @@ func showDifferencesHandler(w http.ResponseWriter, r *http.Request) {
 	// all ids:
 	combined := getCombined(ids1, ids2)
 
-	html := "<table border=1 cellspacing=0 cellpadding=4>"
+	html := uiMenu()
+	html += "<table border=1 cellspacing=0 cellpadding=4>"
 	html += getHeaders(db1name, db2name)
 	total := 0
 	for _, idxAsInt := range combined {
@@ -459,61 +481,39 @@ func showDifferencesHandler(w http.ResponseWriter, r *http.Request) {
 			rightRecord = val
 		}
 
-		r, c := compareRecords(leftRecord, rightRecord, idxAsInt)
+		r, c := compareRecords(leftRecord, rightRecord, db1name, db2name, idxAsInt)
 		total += c
 		html += r
 	}
-	html += `</table>
-	<style> 
-	* {
-		font-family: "courier new", monospace;
-	}
-	.ucell a {
-		text-decoration: none;
-	}
-	.ucell {
-		text-align:center;
-		font-size:8pt;
-		border:1px solid rgb(200,200,200);
-		width:5px;
-	}
-
-	.lcell {
-		border:1px solid rgb(200,200,200);
-		border-left:2px solid black;
-	}
-	.rcell {
-		border:1px solid rgb(200,200,200);
-		border-right:2px solid black;
-	}
-
-	.rcell {
-
-	}
-	.field-name {
-		font-size:2em;
-	}
-	.empty {
-		background-image: linear-gradient(45deg, #dbdbdb 25%, #f5e7e7 25%, #f5e7e7 50%, #dbdbdb 50%, #dbdbdb 75%, #f5e7e7 75%, #f5e7e7 100%);
-background-size: 56.57px 56.57px;
-
-	}
-
-	td { 
-		white-space:nowrap; 
-		max-width:400px;
-		overflow:hidden 
-	} 
-	.ok {
-		background-color:rgb(200,230,200);
-	}
-	.identical {
-		background-color:rgb(200,200,230);
-	}
-
-	</style>`
+	html += "</table>"
 	html += fmt.Sprintf("Total: %d", total)
 	fmt.Fprintf(w, html)
+}
+func clearChangesHandler(w http.ResponseWriter, r *http.Request) {
+	pre(w)
+	changes = []string{}
+	fmt.Fprintf(w, uiMenu()+"<br/><script>;alert(\"Changes were cleared!\");location.href='/list';</script>")
+}
+func listChangesHandler(w http.ResponseWriter, r *http.Request) {
+	pre(w)
+	cx := uiMenu()
+	cx += "<h1>Changes</h1><pre>"
+	for _, change := range changes {
+		cx += change + "\n"
+	}
+	cx += "</pre>"
+	fmt.Fprintf(w, cx)
+}
+func addChangeHandler(w http.ResponseWriter, r *http.Request) {
+	jpre(w)
+	r.ParseForm()
+	change := "AA"
+	changeType := r.Form["changeType"]
+	direction := r.Form["direction"]
+	fieldName := r.Form["fieldName"]
+	fmt.Printf("append:%s:%s:%s\n", changeType, direction, fieldName)
+	changes = append(changes, change)
+	fmt.Fprintf(w, `{"result":"OK"}`)
 }
 
 // perhaps we can add:
@@ -548,7 +548,15 @@ func main() {
 	db1name = os.Args[1]
 	db2name = os.Args[2]
 
-	http.HandleFunc("/", showDifferencesHandler) // set router
+	fs := http.FileServer(http.Dir("public"))
+	http.Handle("/public/", fs) //http.StripPrefix("/public/", fs))
+	http.Handle("/", fs)
+
+	http.HandleFunc("/list", showDifferencesHandler)
+	http.HandleFunc("/clear", clearChangesHandler)
+	http.HandleFunc("/addChange", addChangeHandler)
+	http.HandleFunc("/changes", listChangesHandler)
+
 	fmt.Println("Server started, you probably want to go to http://localhost:3433/")
 	err := http.ListenAndServe(":3433", nil) // 3433: diff in t9
 	if err != nil {
