@@ -20,6 +20,7 @@ We sincerely hope this program will be useful at some point.
 import (
 	"database/sql"
 	"fmt"
+	"regexp"
 	//"io"
 	//"io/ioutil"
 	_ "github.com/go-sql-driver/mysql"
@@ -228,7 +229,7 @@ func compareRecords(site1 Site, site2 Site, database1Name string, database2Name 
 		if rowIsIdentical {
 			okClassName = "ok identical "
 		}
-		upref := "<td class='ucell " + okClassName + "' title='" + sidx + "' onclick='prompt(\"\",\"" + sidx + "\");'  >"
+		upref := "<td class='ucell " + okClassName + "' title='" + sidx + "'   >" // onclick='prompt(\"\",\"" + sidx + "\");'
 		//upref = "<td class='ucell'>"
 
 		lres := "<td class='lcell " + okClassName + "'>" + lv + "</td>"
@@ -237,7 +238,8 @@ func compareRecords(site1 Site, site2 Site, database1Name string, database2Name 
 
 		if leftValue == "EMPTY" {
 			lres = "<td class='lcell empty'>&nbsp;</td>"
-			ures = upref + "<a>&lt;</a></td>"
+			ures = upref + "<a onclick='addChange(\"INS\",\"R2L\",\"ALL\",\"" + sidx + "\",event,this);'>&lt;</a></td>"
+			// TODO: add another arrow for DELETION on L2R
 			rres = "<td class='rcell'>" + rv + "</td>"
 			diffCount++
 			resultFields = append(resultFields, lres+ures+rres)
@@ -245,7 +247,8 @@ func compareRecords(site1 Site, site2 Site, database1Name string, database2Name 
 		}
 		if rightValue == "EMPTY" {
 			lres = "<td class='lcell'>" + lv + "</td>"
-			ures = upref + "<a>&gt;</a></td>"
+			ures = upref + "<a onclick='addChange(\"INS\",\"L2R\",\"ALL\",\"" + sidx + "\",event,this);'>&gt;</a></td>"
+			// TODO: add another arrow for DELETION on R2L
 			rres = "<td class='rcell empty'>&nbsp;</td>"
 			diffCount++
 			resultFields = append(resultFields, lres+ures+rres)
@@ -258,7 +261,12 @@ func compareRecords(site1 Site, site2 Site, database1Name string, database2Name 
 			// Report Differences
 			diffCount++
 			lres = "<td class='lcell' style='background-color:rgb(230,200,200)'>" + lv + "</td>"
-			ures = upref + "<a href='#'>&lt;</a><br/><br/><a href='#'>&gt;</a></td>"
+			ures = upref
+
+			ures += "<a onclick='addChange(\"UPD\",\"R2L\",\"" + fieldName + "\",\"" + sidx + "\",event,this);'>&lt;</a><br/>"
+			ures += "<br/>"
+			ures += " <a onclick='addChange(\"UPD\",\"L2R\",\"" + fieldName + "\",\"" + sidx + "\",event,this);'>&gt;</a></td>"
+
 			rres = "<td class='rcell' style='background-color:rgb(230,200,200)' >" + rv + "</td>"
 		}
 
@@ -504,16 +512,81 @@ func listChangesHandler(w http.ResponseWriter, r *http.Request) {
 	cx += "</pre>"
 	fmt.Fprintf(w, cx)
 }
+
+// Eliminates bad stuff from input, we can't trust the user's data.
+// it remove bad characters
+func removeStrangeCharacters(a string) string {
+	var re = regexp.MustCompile(`([\\"'<>&%$])`)
+	return re.ReplaceAllString(a, "")
+}
+
+func mkInsert(row Site, dbName string) string {
+	fields := []string{}
+	values := []string{}
+	for _, fieldName := range getFieldList() {
+		fields = append(fields, fieldName)
+		values = append(values, row[fieldName])
+	}
+	return "INSERT INTO " + dbName + ".site (" + strings.Join(fields, ",") + ") VALUES('" + strings.Join(values, "','") + "');"
+}
+func mkSingleFieldUpdate(row Site, dbName string, fieldName string) string {
+	value := row[fieldName]
+	return "UPDATE  " + dbName + ".site SET " + fieldName + " = '" + value + "' WHERE id = '" + row["id"] + "';"
+}
+
+// will produce insert, update, whatever, on demand.
 func addChangeHandler(w http.ResponseWriter, r *http.Request) {
 	jpre(w)
 	r.ParseForm()
-	change := "AA"
-	changeType := r.Form["changeType"]
-	direction := r.Form["direction"]
-	fieldName := r.Form["fieldName"]
-	fmt.Printf("append:%s:%s:%s\n", changeType, direction, fieldName)
-	changes = append(changes, change)
-	fmt.Fprintf(w, `{"result":"OK"}`)
+
+	if len(r.Form["changeType"]) == 0 || len(r.Form["direction"]) == 0 || len(r.Form["fieldName"]) == 0 || len(r.Form["id"]) == 0 {
+		fmt.Fprintf(w, `{"result":"MISSING PARAMS"}`)
+	}
+
+	changeType := removeStrangeCharacters(r.Form["changeType"][0]) // INS or UPD
+	direction := removeStrangeCharacters(r.Form["direction"][0])
+	fieldName := removeStrangeCharacters(r.Form["fieldName"][0])
+	id := removeStrangeCharacters(r.Form["id"][0]) // maybe comma separated
+	fmt.Printf("append:%s:%s:%s:%s\n", changeType, direction, fieldName, id)
+
+	idList := strings.Split(id, ",")
+
+	dataSource := db1name
+	destination := db2name
+	if direction == "R2L" {
+		dataSource = db2name
+		destination = db1name
+	}
+	//get records:
+	sqlWhereStatement := "1=2"
+	if len(idList) == 1 {
+		sqlWhereStatement = " (id = '" + id + "') "
+	} else if len(idList) == 2 {
+		sqlWhereStatement = " (id >= '" + idList[0] + "' and id <= '" + idList[1] + "') "
+	}
+	q := "SELECT * FROM site WHERE " + sqlWhereStatement
+	rows, _, err := getRecords(q, dataSource)
+	if err != nil {
+		fmt.Println(err)
+		fmt.Fprintf(w, `{"result":"SQL FAIL"}`)
+		return
+	}
+	jsonOutput := `{"result":"USE UPD OR INS"}`
+	if changeType == "INS" {
+		for _, row := range rows {
+			changes = append(changes, mkInsert(row, destination))
+		}
+		jsonOutput = fmt.Sprintf(`{"result":"Ins:%d to %s"}`, len(rows), destination)
+	} else if changeType == "UPD" {
+		for _, row := range rows {
+			changes = append(changes, mkSingleFieldUpdate(row, destination, fieldName))
+		}
+		jsonOutput = fmt.Sprintf(`{"result":"Ins:%d to %s"}`, len(rows), destination)
+
+		// TODO: DEL
+	}
+	fmt.Fprintf(w, jsonOutput)
+
 }
 
 // perhaps we can add:
