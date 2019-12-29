@@ -1,13 +1,30 @@
 package main
 
+/**
+The purpose of this program is to allow the easy comparison of
+2 different tables in a single database,
+This can be useful since we want to compare different databases
+it supports MySQL for now, but support for more databases can be added
+in the future
+it supports tables, but support can be added for schema comparison,
+record count basic reporting comparison, code diffing, etc.
+
+This program can probably be used for people who have a "development"
+database and a "production" database so they can figure out the
+differences between development and production
+
+We sincerely hope this program will be useful at some point.
+
+*/
+
 import (
 	"database/sql"
 	"fmt"
 	//"io"
 	//"io/ioutil"
-	"log"
-	//"net/http"
 	_ "github.com/go-sql-driver/mysql"
+	"log"
+	"net/http"
 	"os"
 	"reflect"
 	"strconv"
@@ -15,6 +32,11 @@ import (
 	//"time"
 )
 
+var db1name string
+var db2name string
+
+// getDatabaseConnection provides a database connection *sql.DB Object
+// https://golang.org/pkg/database/sql/#DB
 func getDatabaseConnection(dbName string) *sql.DB {
 	connectionString := getConnectionString(dbName)
 	db, err := sql.Open("mysql", connectionString)
@@ -23,12 +45,16 @@ func getDatabaseConnection(dbName string) *sql.DB {
 	}
 	return db
 }
+
+// TODO: remove
 func checkErr(e error) {
 	if e == nil {
 		panic(e)
 	}
 }
 
+// retrieves the connection from the database
+// TODO: add PORT
 func getConnectionString(dbName string) string {
 	/* constants which contains information about mysql database connectivity */
 	dbuser := os.Getenv("DBUSER")
@@ -44,8 +70,28 @@ func getConnectionString(dbName string) string {
 	return connectionString
 }
 
-// Site represents a record on the Site table, although it could probably be any table
+// Site represents a record on the Site table, although it
+// could probably be any table, our table is called Site, perhaps
+// rename it to Record?
 type Site map[string]string
+
+// getHeaders() creates the headers in HTML,
+// TODO: Freeze headers, improve the width.
+// There are 2 rows of headers, one "main header row" which is split
+// into two subheaders, one subheader per database name, like this:
+//
+// The output of the program should kinda look like this:
+// +----------------------------+
+// |                            |
+// |  field name goes here      |
+// |                            |
+// +-------------+--------------+
+// |             |              |
+// |  db1        |   db2        |
+// |             |              |
+// +-------------+--------------+
+//
+// Todo: Improve this, maybe add SQL Comment field below the header, as tooltip?
 
 func getHeaders(db1name string, db2name string) string {
 	dx := "<tr>"
@@ -64,6 +110,10 @@ func getHeaders(db1name string, db2name string) string {
 	return dx
 
 }
+
+// mkEmpty creates empty records so they can later be filled by the
+// other function
+// todo: OrderedMap
 func mkEmpty() Site {
 	d := make(Site)
 	for _, f := range getFieldList() {
@@ -71,6 +121,14 @@ func mkEmpty() Site {
 	}
 	return d
 }
+
+// getFieldList returns a list of fields
+// todo: get these fields directly from the query
+// by parsing the query
+// downside: no select *
+//
+// TODO: we can probably get the fields directly from the database
+// using the schema tables (although, not portably)
 func getFieldList() []string {
 	/*
 		fields := []string{
@@ -123,6 +181,10 @@ func getFieldList() []string {
 
 	return fields
 }
+
+// TODO: make a function map so people can indicate which
+// columns should be different and which columns should be the same
+// also exceldiff?????
 func compareRecords(site1 Site, site2 Site, idx int) (string, int) {
 	sidx := fmt.Sprintf("%d", idx)
 	fields := getFieldList()
@@ -205,6 +267,9 @@ func compareRecords(site1 Site, site2 Site, idx int) (string, int) {
 	result += "</tr>\n"
 	return result, diffCount
 }
+
+// used for generic database user interface
+// apologies for the lack of types.
 func makeResultReceiver(length int) []interface{} {
 	result := make([]interface{}, 0, length)
 	for i := 0; i < length; i++ {
@@ -277,6 +342,13 @@ func getRecords(query string, dbName string) (map[string]Site, []int, error) {
 	db.Close()
 	return result, ids, nil
 }
+
+// given 2 lists of ids, it combines both lists, sorted.
+// perhaps just appending, sorting and later de-duplicating
+// would have been easier
+//
+// TODO: change algo to append, sort, dedup
+// (in order to remove the nasty for loop)
 func getCombined(ids1 []int, ids2 []int) []int {
 	// start:
 	res := []int{}
@@ -335,13 +407,8 @@ func getCombined(ids1 []int, ids2 []int) []int {
 
 }
 
-func main() {
-	if len(os.Args) < 3 {
-		log.Println("usage: db_diff db1 db2")
-		return
-	}
-	db1name := os.Args[1]
-	db2name := os.Args[2]
+func showDifferencesHandler(w http.ResponseWriter, r *http.Request) {
+
 	// some fields
 	//q1 := "SELECT id-200 as id, job_title, educationRequirements, experienceRequirements, qualifications, responsibilities, skills, value_hour, enabled, destination, organization, occupational_category, script_template FROM site WHERE id>=214 and id <=253  order by id "
 
@@ -410,7 +477,7 @@ func main() {
 		border:1px solid rgb(200,200,200);
 		width:5px;
 	}
-		
+
 	.lcell {
 		border:1px solid rgb(200,200,200);
 		border-left:2px solid black;
@@ -419,7 +486,7 @@ func main() {
 		border:1px solid rgb(200,200,200);
 		border-right:2px solid black;
 	}
-	
+
 	.rcell {
 
 	}
@@ -434,7 +501,7 @@ background-size: 56.57px 56.57px;
 
 	td { 
 		white-space:nowrap; 
-		max-width:300px;
+		max-width:400px;
 		overflow:hidden 
 	} 
 	.ok {
@@ -445,9 +512,49 @@ background-size: 56.57px 56.57px;
 	}
 
 	</style>`
-	fmt.Println(html)
+	html += fmt.Sprintf("Total: %d", total)
+	fmt.Fprintf(w, html)
+}
 
-	fmt.Printf("Total: %d", total)
+// perhaps we can add:
+// todo add flags  (in addition to env vars) for:
+// port, host
+// env vars are confusing, even for programmers, should we remove?
+//
+// todo: create a decent configuration file, which includes
+// database connection for both tables (they may live in different hosts)
+//
+// *** comparison algorithm settings file (lua?? scripting)
+//
+// we need a gui to configure the program as well.
+// maybe a config tab?
+//
+// our needs:
+// provide sql where statements on both sides (config file)
+//
+// provide transformations (i.e. 100 becomes 10) lua-algo
+//
+// indicate which columns are important
+//
+// generate SQL for inserts, updates, maybe even DELETEs??!
+//
+// selecting which rows are important is also useful.
+//
+func main() {
+	if len(os.Args) < 3 {
+		log.Println("usage: db_diff db1 db2")
+		return
+	}
+	db1name = os.Args[1]
+	db2name = os.Args[2]
+
+	http.HandleFunc("/", showDifferencesHandler) // set router
+	fmt.Println("Server started, you probably want to go to http://localhost:3433/")
+	err := http.ListenAndServe(":3433", nil) // 3433: diff in t9
+	if err != nil {
+		log.Fatal("Port is taken, maybe already running in another tab? out of sockets?: ", err)
+	}
 }
 
 // http://stripesgenerator.com/
+// https://astaxie.gitbooks.io/build-web-application-with-golang/en/03.2.html
