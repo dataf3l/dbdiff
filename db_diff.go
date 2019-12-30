@@ -225,7 +225,7 @@ func compareRecords(vm *otto.Otto, site1 Site, site2 Site, database1Name string,
 		leftValue := site1[fieldName]
 		rightValue := site2[fieldName]
 		lcss := getRecordCSS(vm, db1name, site1, fieldName)
-		rcss := getRecordCSS(vm, db1name, site2, fieldName)
+		rcss := getRecordCSS(vm, db2name, site2, fieldName)
 
 		lv := "<xmp>" + leftValue + "</xmp>"
 		rv := "<xmp>" + rightValue + "</xmp>"
