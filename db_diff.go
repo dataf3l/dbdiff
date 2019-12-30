@@ -31,10 +31,14 @@ import (
 	"strconv"
 	"strings"
 	//"time"
+	"encoding/json"
+	"github.com/robertkrimen/otto"
+	"io/ioutil"
 )
 
 var db1name string
 var db2name string
+var configFile string
 var changes []string
 
 // getDatabaseConnection provides a database connection *sql.DB Object
@@ -187,7 +191,7 @@ func getFieldList() []string {
 // TODO: make a function map so people can indicate which
 // columns should be different and which columns should be the same
 // also exceldiff?????
-func compareRecords(site1 Site, site2 Site, database1Name string, database2Name string, idx int) (string, int) {
+func compareRecords(vm *otto.Otto, site1 Site, site2 Site, database1Name string, database2Name string, idx int) (string, int) {
 	sidx := fmt.Sprintf("%d", idx)
 	fields := getFieldList()
 	diffCount := 0
@@ -220,6 +224,8 @@ func compareRecords(site1 Site, site2 Site, database1Name string, database2Name 
 	for _, fieldName := range fields {
 		leftValue := site1[fieldName]
 		rightValue := site2[fieldName]
+		lcss := getRecordCSS(vm, db1name, site1, fieldName)
+		rcss := getRecordCSS(vm, db1name, site2, fieldName)
 
 		lv := "<xmp>" + leftValue + "</xmp>"
 		rv := "<xmp>" + rightValue + "</xmp>"
@@ -232,21 +238,21 @@ func compareRecords(site1 Site, site2 Site, database1Name string, database2Name 
 		upref := "<td class='ucell " + okClassName + "' title='" + sidx + "'   >" // onclick='prompt(\"\",\"" + sidx + "\");'
 		//upref = "<td class='ucell'>"
 
-		lres := "<td class='lcell " + okClassName + "'>" + lv + "</td>"
+		lres := "<td class='lcell " + okClassName + "' style='" + lcss + "'>" + lv + "</td>"
 		ures := upref + "</td>"
-		rres := "<td class='rcell " + okClassName + "'>" + rv + "</td>"
+		rres := "<td class='rcell " + okClassName + "' style='" + rcss + "'>" + rv + "</td>"
 
 		if leftValue == "EMPTY" {
 			lres = "<td class='lcell empty'>&nbsp;</td>"
 			ures = upref + "<a onclick='addChange(\"INS\",\"R2L\",\"ALL\",\"" + sidx + "\",event,this);'>&lt;</a></td>"
 			// TODO: add another arrow for DELETION on L2R
-			rres = "<td class='rcell'>" + rv + "</td>"
+			rres = "<td class='rcell' style='" + rcss + "'>" + rv + "</td>"
 			diffCount++
 			resultFields = append(resultFields, lres+ures+rres)
 			continue
 		}
 		if rightValue == "EMPTY" {
-			lres = "<td class='lcell'>" + lv + "</td>"
+			lres = "<td class='lcell' style='" + lcss + "'>" + lv + "</td>"
 			ures = upref + "<a onclick='addChange(\"INS\",\"L2R\",\"ALL\",\"" + sidx + "\",event,this);'>&gt;</a></td>"
 			// TODO: add another arrow for DELETION on R2L
 			rres = "<td class='rcell empty'>&nbsp;</td>"
@@ -260,14 +266,14 @@ func compareRecords(site1 Site, site2 Site, database1Name string, database2Name 
 		} else {
 			// Report Differences
 			diffCount++
-			lres = "<td class='lcell' style='background-color:rgb(230,200,200)'>" + lv + "</td>"
+			lres = "<td class='lcell' style='background-color:rgb(230,200,200);" + lcss + "'>" + lv + "</td>"
 			ures = upref
 
 			ures += "<a onclick='addChange(\"UPD\",\"R2L\",\"" + fieldName + "\",\"" + sidx + "\",event,this);'>&lt;</a><br/>"
 			ures += "<br/>"
 			ures += " <a onclick='addChange(\"UPD\",\"L2R\",\"" + fieldName + "\",\"" + sidx + "\",event,this);'>&gt;</a></td>"
 
-			rres = "<td class='rcell' style='background-color:rgb(230,200,200)' >" + rv + "</td>"
+			rres = "<td class='rcell' style='background-color:rgb(230,200,200)' style='" + rcss + "'>" + rv + "</td>"
 		}
 
 		resultFields = append(resultFields, lres+ures+rres)
@@ -438,6 +444,9 @@ func pre(w http.ResponseWriter) {
 func showDifferencesHandler(w http.ResponseWriter, r *http.Request) {
 	pre(w)
 	fmt.Println("/list")
+
+	vm := getJSVM()
+
 	// some fields
 	//q1 := "SELECT id-200 as id, job_title, educationRequirements, experienceRequirements, qualifications, responsibilities, skills, value_hour, enabled, destination, organization, occupational_category, script_template FROM site WHERE id>=214 and id <=253  order by id "
 
@@ -489,7 +498,7 @@ func showDifferencesHandler(w http.ResponseWriter, r *http.Request) {
 			rightRecord = val
 		}
 
-		r, c := compareRecords(leftRecord, rightRecord, db1name, db2name, idxAsInt)
+		r, c := compareRecords(vm, leftRecord, rightRecord, db1name, db2name, idxAsInt)
 		total += c
 		html += r
 	}
@@ -576,17 +585,58 @@ func addChangeHandler(w http.ResponseWriter, r *http.Request) {
 		for _, row := range rows {
 			changes = append(changes, mkInsert(row, destination))
 		}
-		jsonOutput = fmt.Sprintf(`{"result":"Ins:%d to %s"}`, len(rows), destination)
+		jsonOutput = fmt.Sprintf(`{"result":"Inserted:%d to %s"}`, len(rows), destination)
 	} else if changeType == "UPD" {
 		for _, row := range rows {
 			changes = append(changes, mkSingleFieldUpdate(row, destination, fieldName))
 		}
-		jsonOutput = fmt.Sprintf(`{"result":"Ins:%d to %s"}`, len(rows), destination)
+		jsonOutput = fmt.Sprintf(`{"result":"Updated:%d to %s"}`, len(rows), destination)
 
 		// TODO: DEL
 	}
 	fmt.Fprintf(w, jsonOutput)
 
+}
+
+func runConfigInJSVM(vm *otto.Otto) {
+	//load configuration file:
+	file, err := os.Open(configFile) // unlisted/config.js
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer file.Close()
+	configFileContents, err := ioutil.ReadAll(file)
+	log.Println("loaded config:" + configFile)
+	vm.Run(configFileContents)
+}
+
+// getJSVM will return an Otto Object so you can run stuff, this will have loaded the definitions.
+func getJSVM() *otto.Otto {
+
+	vm := otto.New()
+	runConfigInJSVM(vm)
+
+	//	vm.Run(`
+	//	    abc = 2 + 2;
+	//	    console.log("The value of abc is " + abc); // 4
+	//	`)
+	return vm
+}
+func getRecordCSS(vm *otto.Otto, dbName string, row Site, fieldName string) string {
+	rowAsJSON, err := json.Marshal(row)
+	if err != nil {
+		log.Println("can't jsonify row:" + err.Error())
+		return ""
+	}
+
+	vm.Run(fmt.Sprintf("var res = getRowColor(%s,'%s','%s')", rowAsJSON, dbName, fieldName))
+	valueAsString := "background-color:black"
+	if value, err := vm.Get("res"); err == nil {
+		if valueAsString, err := value.ToString(); err == nil {
+			return valueAsString
+		}
+	}
+	return valueAsString
 }
 
 // perhaps we can add:
@@ -614,12 +664,13 @@ func addChangeHandler(w http.ResponseWriter, r *http.Request) {
 // selecting which rows are important is also useful.
 //
 func main() {
-	if len(os.Args) < 3 {
-		log.Println("usage: db_diff db1 db2")
+	if len(os.Args) < 4 {
+		log.Println("usage: db_diff db1 db2 configFile.js")
 		return
 	}
 	db1name = os.Args[1]
 	db2name = os.Args[2]
+	configFile = os.Args[3]
 
 	fs := http.FileServer(http.Dir("public"))
 	http.Handle("/public/", fs) //http.StripPrefix("/public/", fs))
