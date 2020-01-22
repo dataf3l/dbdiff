@@ -1,3 +1,6 @@
 db_diff
 env.sh
 private
+.DS_Store
+db_diff.exe
+db_diff_linux
