@@ -9,4 +9,4 @@ install go 1.3 or superior
 2. and put a config.js file that looks like private_sample
 
 
-
+[![DeepSource](https://static.deepsource.io/deepsource-badge-light-mini.svg)](https://deepsource.io/gh/dataf3l/dbdiff/?ref=repository-badge)

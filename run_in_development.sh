@@ -1,2 +1,4 @@
 #!/bin/bash
-go build && ./db_diff deliveryjobsnyc chaufferjob ./private/config.js
+
+source env.sh
+go build && ./db_diff fixed chaufferjob ./private/config.js
