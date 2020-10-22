@@ -463,8 +463,15 @@ func showDifferencesHandler(w http.ResponseWriter, r *http.Request) {
 
 	//q1 := "SELECT " + strings.Join(getFieldList(), ",") + " FROM site WHERE site='tutree.com' and id >=214 and id <=253  ORDER BY id"
 
-	q1 := "SELECT " + strings.Join(getFieldList(), ",") + " FROM site ORDER BY id"
-	q2 := "SELECT " + strings.Join(getFieldList(), ",") + " FROM site ORDER BY id "
+	// id in (3, 8,8,10,11, 54,56,60,61,62,63,64,65)
+	// ADD query parameter
+
+	q1 := getLeftQuery(vm)
+	q2 := getRightQuery(vm)
+	log.Println("LEFT:" + q1)
+	log.Println("RIGHT:" + q2)
+	//q1 := "SELECT " + strings.Join(getFieldList(), ",") + " FROM site ORDER BY id"
+	//q2 := "SELECT " + strings.Join(getFieldList(), ",") + " FROM site ORDER BY id"
 
 	var leftRecordSet map[string]Site
 	var rightRecordSet map[string]Site
@@ -529,13 +536,16 @@ func removeStrangeCharacters(a string) string {
 	return re.ReplaceAllString(a, "")
 }
 
-func mkInsert(row Site, dbName string) string {
+func mkInsert(row Site, dbName string, vm *otto.Otto) string {
 	fields := []string{}
 	values := []string{}
 	for _, fieldName := range getFieldList() {
+		// transform
+		row[fieldName] = getFixedInsertField(vm, dbName, fieldName, row[fieldName])
 		fields = append(fields, fieldName)
 		values = append(values, row[fieldName])
 	}
+
 	return "INSERT INTO " + dbName + ".site (" + strings.Join(fields, ",") + ") VALUES('" + strings.Join(values, "','") + "');"
 }
 func mkSingleFieldUpdate(row Site, dbName string, fieldName string) string {
@@ -545,6 +555,7 @@ func mkSingleFieldUpdate(row Site, dbName string, fieldName string) string {
 
 // will produce insert, update, whatever, on demand.
 func addChangeHandler(w http.ResponseWriter, r *http.Request) {
+	vm := getJSVM()
 	jpre(w)
 	r.ParseForm()
 
@@ -583,7 +594,7 @@ func addChangeHandler(w http.ResponseWriter, r *http.Request) {
 	jsonOutput := `{"result":"USE UPD OR INS"}`
 	if changeType == "INS" {
 		for _, row := range rows {
-			changes = append(changes, mkInsert(row, destination))
+			changes = append(changes, mkInsert(row, destination, vm))
 		}
 		jsonOutput = fmt.Sprintf(`{"result":"Inserted:%d to %s"}`, len(rows), destination)
 	} else if changeType == "UPD" {
@@ -622,6 +633,38 @@ func getJSVM() *otto.Otto {
 	//	`)
 	return vm
 }
+
+// getStringValueFromFunctionConfigFunction
+func getFromConfig(vm *otto.Otto, functionName string, defaultValue string) string {
+	vm.Run("var res = " + functionName + "()")
+	valueAsString := defaultValue
+	if value, err := vm.Get("res"); err == nil {
+		if valueAsString, err := value.ToString(); err == nil {
+			return valueAsString
+		}
+	}
+	return valueAsString
+
+}
+func getLeftQuery(vm *otto.Otto) string {
+	return getFromConfig(vm, "getLeftQuery", "select 'LERROR' as error_missing_db")
+}
+func getRightQuery(vm *otto.Otto) string {
+	return getFromConfig(vm, "getRightQuery", "select 'RERROR' as error_missing_db")
+}
+
+func getFixedInsertField(vm *otto.Otto, dbName string, fieldName string, fieldContents string) string {
+
+	vm.Run(fmt.Sprintf("var res = getFixedInsert('%s','%s','%s')", dbName, fieldName, fieldContents))
+	valueAsString := fieldContents
+	if value, err := vm.Get("res"); err == nil {
+		if valueAsString, err := value.ToString(); err == nil {
+			return valueAsString
+		}
+	}
+	return valueAsString
+}
+
 func getRecordCSS(vm *otto.Otto, dbName string, row Site, fieldName string) string {
 	rowAsJSON, err := json.Marshal(row)
 	if err != nil {
